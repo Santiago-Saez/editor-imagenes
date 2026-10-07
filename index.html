@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PixelLab — Editor de imágenes 100% en el navegador</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">◐ PixelLab <span class="badge">100% local</span></div>
+  <div class="top-actions">
+    <label class="btn primary file-label">Abrir imagen
+      <input type="file" id="fileInput" accept="image/*" hidden />
+    </label>
+    <button id="btnUndo" class="btn" title="Deshacer (Ctrl+Z)">↩</button>
+    <button id="btnRedo" class="btn" title="Rehacer (Ctrl+Y)">↪</button>
+    <button id="btnReset" class="btn" title="Quitar todas las capas">Reset</button>
+    <span id="engineBadge" class="pill">motor: …</span>
+    <span id="mpBadge" class="pill hidden">grande &gt;20MP → worker</span>
+  </div>
+</header>
+
+<main class="layout">
+  <section class="stage-wrap" id="dropZone">
+    <div class="stage-toolbar">
+      <span id="imgInfo" class="muted">Arrastra una imagen aquí o pulsa “Abrir imagen”. Todo se procesa en tu navegador.</span>
+      <span id="exportDims" class="muted"></span>
+    </div>
+    <div class="canvas-holder" id="canvasHolder">
+      <canvas id="preview"></canvas>
+      <div id="cropOverlay" class="crop-overlay hidden">
+        <div class="crop-box" id="cropBox">
+          <span class="handle nw" data-h="nw"></span><span class="handle ne" data-h="ne"></span>
+          <span class="handle sw" data-h="sw"></span><span class="handle se" data-h="se"></span>
+          <span class="handle n" data-h="n"></span><span class="handle s" data-h="s"></span>
+          <span class="handle w" data-h="w"></span><span class="handle e" data-h="e"></span>
+          <div class="grid"></div>
+        </div>
+      </div>
+      <div id="emptyState" class="empty">
+        <p class="empty-title">Suelta tu foto aquí</p>
+        <p class="muted">PNG · JPEG · WebP · AVIF · BMP. No se sube a ningún servidor.</p>
+      </div>
+    </div>
+    <div id="progress" class="progress hidden"><div class="bar"></div><span class="label">Procesando en worker…</span></div>
+  </section>
+
+  <aside class="panel">
+    <nav class="tabs">
+      <button data-tab="crop" class="active">Recorte</button>
+      <button data-tab="geom">Geometría</button>
+      <button data-tab="color">Ajustes</button>
+      <button data-tab="layers">Capas</button>
+      <button data-tab="export">Exportar</button>
+    </nav>
+
+    <div class="tab-page" id="tab-crop">
+      <h3>Recorte con proporción fija</h3>
+      <div class="row">
+        <label>Proporción</label>
+        <select id="aspectSelect">
+          <option value="free">Libre</option>
+          <option value="1:1">1:1</option>
+          <option value="4:3">4:3</option>
+          <option value="3:2">3:2</option>
+          <option value="16:9">16:9</option>
+          <option value="9:16">9:16</option>
+        </select>
+      </div>
+      <div class="row btns">
+        <button id="btnCropMode" class="btn primary">Recortar</button>
+        <button id="btnCropApply" class="btn success" disabled>Aplicar</button>
+        <button id="btnCropCancel" class="btn" disabled>Cancelar</button>
+      </div>
+      <p class="hint">Arrastra para mover. Usa las esquinas para redimensionar. Con proporción fija el recorte se bloquea al ratio.</p>
+    </div>
+
+    <div class="tab-page hidden" id="tab-geom">
+      <h3>Rotación / volteo / tamaño</h3>
+      <div class="row btns">
+        <button id="btnRotL" class="btn">⟲ −90°</button>
+        <button id="btnRotR" class="btn">⟳ +90°</button>
+        <button id="btnFlipH" class="btn">⇋ Horizontal</button>
+        <button id="btnFlipV" class="btn">⇅ Vertical</button>
+      </div>
+      <div class="row">
+        <label>Ángulo libre <span id="rotVal">0°</span></label>
+        <input type="range" id="rotFree" min="-180" max="180" value="0" step="1" />
+      </div>
+      <h3>Redimensionado (salida)</h3>
+      <div class="row btns">
+        <label class="mini">Ancho <input type="number" id="resizeW" min="1" max="20000" /></label>
+        <label class="mini">Alto <input type="number" id="resizeH" min="1" max="20000" /></label>
+        <label class="mini check"><input type="checkbox" id="resizeLock" checked /> 🔒</label>
+      </div>
+      <div class="row btns">
+        <button class="btn" data-scale="0.25">25%</button>
+        <button class="btn" data-scale="0.5">50%</button>
+        <button class="btn" data-scale="1">100%</button>
+        <button id="btnResizeApply" class="btn primary">Aplicar tamaño</button>
+        <button id="btnResizeClear" class="btn">Quitar</button>
+      </div>
+      <p class="hint">El redimensionado es una capa no destructiva: se aplica solo en la exportación.</p>
+    </div>
+
+    <div class="tab-page hidden" id="tab-color">
+      <h3>Ajustes de color <span id="glBadge" class="pill small"></span></h3>
+      <div class="slider"><label>Brillo <span id="v-brightness">0</span></label>
+        <input type="range" id="s-brightness" min="-100" max="100" value="0" /></div>
+      <div class="slider"><label>Contraste <span id="v-contrast">0</span></label>
+        <input type="range" id="s-contrast" min="-100" max="100" value="0" /></div>
+      <div class="slider"><label>Saturación <span id="v-saturation">0</span></label>
+        <input type="range" id="s-saturation" min="-100" max="100" value="0" /></div>
+      <div class="slider"><label>Temperatura <span id="v-temperature">0</span></label>
+        <input type="range" id="s-temperature" min="-100" max="100" value="0" /></div>
+      <p class="hint">WebGL si está disponible, si no filtros de canvas/CPU. Cada ajuste es una capa que puedes ocultar o borrar.</p>
+    </div>
+
+    <div class="tab-page hidden" id="tab-layers">
+      <h3>Historial no destructivo</h3>
+      <ul id="layerList" class="layers"></ul>
+      <p class="hint">Cada edición es una capa reversible: 👁 visible, ✕ eliminar. Deshacer/rehacer con Ctrl+Z / Ctrl+Y.</p>
+    </div>
+
+    <div class="tab-page hidden" id="tab-export">
+      <h3>Exportar</h3>
+      <div class="row"><label>Formato</label>
+        <select id="expFormat">
+          <option value="image/png">PNG (sin pérdida)</option>
+          <option value="image/jpeg" selected>JPEG</option>
+          <option value="image/webp">WebP</option>
+        </select>
+      </div>
+      <div class="row"><label>Calidad <span id="qVal">92</span></label>
+        <input type="range" id="expQuality" min="1" max="100" value="92" />
+      </div>
+      <div class="row btns">
+        <button id="btnEstimate" class="btn">Estimar peso</button>
+        <button id="btnExport" class="btn primary">Exportar y descargar</button>
+      </div>
+      <div id="exportResult" class="result muted">Sin exportar todavía.</div>
+      <a id="downloadLink" class="btn success hidden" download="editada">⬇ Descargar</a>
+    </div>
+  </aside>
+</main>
+
+<footer class="foot muted">Sin dependencias · WebGL + Canvas2D fallback · Worker para &gt;20 MP y exportación · <code>python3 -m http.server</code> recomendado (workers fallan en <code>file://</code> en algunos navegadores, hay fallback inline incluido).</footer>
+
+<script src="js/gl.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
